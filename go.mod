@@ -15,6 +15,7 @@ require (
 	github.com/onsi/gomega v1.38.2
 	github.com/openai/openai-go v1.12.0
 	github.com/stretchr/testify v1.11.1
+	go.opentelemetry.io/otel v1.37.0
 	google.golang.org/grpc v1.76.0
 	k8s.io/api v0.34.1
 	k8s.io/apiextensions-apiserver v0.34.1

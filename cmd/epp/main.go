@@ -37,7 +37,12 @@ func main() {
 	// Register llm-d-inference-scheduler plugins
 	plugins.RegisterAllPlugins()
 
-	if err := runner.NewRunner().Run(ctrl.SetupSignalHandler()); err != nil {
+	ctx := ctrl.SetupSignalHandler()
+
+	// Note: GIE built-in plugins are automatically registered by the runner
+	// when it processes configuration in runner.parsePluginsConfiguration()
+
+	if err := runner.NewRunner().Run(ctx); err != nil {
 		os.Exit(1)
 	}
 }

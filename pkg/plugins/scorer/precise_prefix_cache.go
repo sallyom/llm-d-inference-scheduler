@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/llm-d/llm-d-kv-cache-manager/pkg/kvcache"
 	"github.com/llm-d/llm-d-kv-cache-manager/pkg/kvcache/kvevents"
@@ -112,6 +113,29 @@ func (s *PrecisePrefixCacheScorer) WithName(name string) *PrecisePrefixCacheScor
 	return s
 }
 
+// extractPromptFromRequest extracts the prompt text from an LLMRequest based on request type.
+func extractPromptFromRequest(request *types.LLMRequest) string {
+	if request == nil || request.Body == nil {
+		return ""
+	}
+
+	// Handle completions request
+	if request.Body.Completions != nil {
+		return request.Body.Completions.Prompt
+	}
+
+	// Handle chat completions request
+	if request.Body.ChatCompletions != nil {
+		var messages []string
+		for _, msg := range request.Body.ChatCompletions.Messages {
+			messages = append(messages, msg.Content)
+		}
+		return strings.Join(messages, " ")
+	}
+
+	return ""
+}
+
 // Score scores the provided pod based on the KVCache index state.
 // The returned scores are normalized to a range of 0-1.
 func (s *PrecisePrefixCacheScorer) Score(ctx context.Context, _ *types.CycleState, request *types.LLMRequest, pods []types.Pod) map[types.Pod]float64 {
@@ -121,9 +145,10 @@ func (s *PrecisePrefixCacheScorer) Score(ctx context.Context, _ *types.CycleStat
 		return nil
 	}
 
-	prompt, err := getUserInput(request)
-	if err != nil {
-		loggerDebug.Error(err, "Failed to get user input")
+	// Extract prompt from the request body based on request type
+	prompt := extractPromptFromRequest(request)
+	if prompt == "" {
+		loggerDebug.Info("No prompt found in request, skipping scoring")
 		return nil
 	}
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/plugins"
@@ -85,6 +86,29 @@ func (h *PdProfileHandler) TypedName() plugins.TypedName {
 func (h *PdProfileHandler) WithName(name string) *PdProfileHandler {
 	h.typedName.Name = name
 	return h
+}
+
+// extractPromptFromRequest extracts the prompt text from an LLMRequest based on request type.
+func extractPromptFromRequest(request *types.LLMRequest) string {
+	if request == nil || request.Body == nil {
+		return ""
+	}
+
+	// Handle completions request
+	if request.Body.Completions != nil {
+		return request.Body.Completions.Prompt
+	}
+
+	// Handle chat completions request
+	if request.Body.ChatCompletions != nil {
+		var messages []string
+		for _, msg := range request.Body.ChatCompletions.Messages {
+			messages = append(messages, msg.Content)
+		}
+		return strings.Join(messages, " ")
+	}
+
+	return ""
 }
 
 // Pick selects the SchedulingProfiles to run from the list of candidate profiles, while taking into consideration the request properties and the
