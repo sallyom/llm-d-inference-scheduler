@@ -1,23 +1,40 @@
-# Build Stage: using Go 1.24.1 image
-FROM quay.io/projectquay/golang:1.25 AS builder
+# Build Stage: using UBI9 base with latest Go
+FROM registry.access.redhat.com/ubi9/ubi:latest AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
-# Install build tools
-# The builder is based on UBI8, so we need epel-release-8.
-RUN dnf install -y 'https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm' && \
-    dnf install -y gcc-c++ libstdc++ libstdc++-devel clang zeromq-devel pkgconfig && \
+# Install Go and build tools
+# The builder is based on UBI9, so we need epel-release-9.
+RUN dnf install -y 'https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm' && \
+    dnf install -y --allowerasing gcc-c++ libstdc++ libstdc++-devel clang zeromq-devel pkgconfig wget tar && \
     dnf clean all
+
+# Install Go 1.23 (latest stable)
+RUN wget -qO- https://go.dev/dl/go1.23.4.linux-amd64.tar.gz | tar -xz -C /usr/local
+ENV PATH="/usr/local/go/bin:${PATH}"
 
 WORKDIR /workspace
 
+# FOR LOCAL BUILDING
+# This is to build from ../ with llm-d-kv-cache-manager checked out at ../
 # Copy the Go Modules manifests
-COPY go.mod go.mod
-COPY go.sum go.sum
+COPY llm-d-inference-scheduler/go.mod go.mod
+COPY llm-d-inference-scheduler/go.sum go.sum
 
+# FOR LOCAL BUILDING
+# This is to build from ../ with llm-d-kv-cache-manager checked out at ../
 # Copy the go source
-COPY cmd/ cmd/
-COPY pkg/ pkg/
+COPY llm-d-inference-scheduler/cmd/ cmd/
+COPY llm-d-inference-scheduler/pkg/ pkg/
+
+# FOR LOCAL BUILDING
+# This is to build from ../ with llm-d-kv-cache-manager and gateway-api-inference-extension checked out at ../
+# Copy the local dependencies for the replace directives
+COPY llm-d-kv-cache-manager/ llm-d-kv-cache-manager/
+COPY gateway-api-inference-extension/ gateway-api-inference-extension/
+RUN go mod edit -replace github.com/llm-d/llm-d-kv-cache-manager=./llm-d-kv-cache-manager
+RUN go mod edit -replace sigs.k8s.io/gateway-api-inference-extension=./gateway-api-inference-extension
+RUN go mod tidy
 
 # HuggingFace tokenizer bindings
 RUN mkdir -p lib
