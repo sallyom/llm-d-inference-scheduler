@@ -71,15 +71,9 @@ func (p *PrefillHeaderHandler) WithName(name string) *PrefillHeaderHandler {
 
 // PreRequest wires prefill SchedulerProfile result into a header to indicate prefill worker
 func (p *PrefillHeaderHandler) PreRequest(ctx context.Context, request *types.LLMRequest, schedulingResult *types.SchedulingResult, targetPort int) {
-	tracer := otel.GetTracerProvider().Tracer("llm-d-epp")
-	_, span := tracer.Start(ctx, "epp.pd_prerequest")
+	tracer := otel.GetTracerProvider().Tracer("llm-d-inference-scheduler")
+	_, span := tracer.Start(ctx, "llm_d.epp.pd_prerequest")
 	defer span.End()
-
-	// Add component attribute to distinguish this part of the system
-	span.SetAttributes(
-		attribute.String("component", "llm-d-inference-scheduler"),
-		attribute.String("operation", "prefill_disaggregation"),
-	)
 
 	if _, found := request.Headers[prefillPodHeader]; found {
 		request.Headers[prefillPodHeader] = "" // clear header, if already set
@@ -87,7 +81,10 @@ func (p *PrefillHeaderHandler) PreRequest(ctx context.Context, request *types.LL
 
 	prefillProfileRunResult, exists := schedulingResult.ProfileResults[p.prefillProfile]
 	if !exists {
-		span.SetAttributes(attribute.Bool("llm_d.pd.disaggregation_enabled", false))
+		span.SetAttributes(
+			attribute.Bool("llm_d.epp.pd.disaggregation_enabled", false),
+			attribute.String("operation.outcome", "success"),
+		)
 		return // prefill profile failed to run or we chose not to run it, no-op in this case
 	}
 
@@ -95,7 +92,8 @@ func (p *PrefillHeaderHandler) PreRequest(ctx context.Context, request *types.LL
 	request.Headers[prefillPodHeader] = prefillHostPort // in the form of <ip:port>
 
 	span.SetAttributes(
-		attribute.Bool("llm_d.pd.disaggregation_enabled", true),
-		attribute.String("llm_d.pd.prefill_pod_address", prefillProfileRunResult.TargetPods[0].GetPod().Address),
+		attribute.Bool("llm_d.epp.pd.disaggregation_enabled", true),
+		attribute.String("llm_d.epp.pd.prefill_pod_address", prefillProfileRunResult.TargetPods[0].GetPod().Address),
+		attribute.String("operation.outcome", "success"),
 	)
 }
