@@ -27,6 +27,8 @@ package main
 import (
 	"os"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/gateway-api-inference-extension/cmd/epp/runner"
 
@@ -37,7 +39,29 @@ func main() {
 	// Register llm-d-inference-scheduler plugins
 	plugins.RegisterAllPlugins()
 
-	if err := runner.NewRunner().Run(ctrl.SetupSignalHandler()); err != nil {
+	ctx := ctrl.SetupSignalHandler()
+
+	// Create a startup span that will always be generated
+	tracer := otel.GetTracerProvider().Tracer("llm-d-epp")
+	ctx, span := tracer.Start(ctx, "inference_scheduler.startup")
+	defer span.End()
+	
+	span.SetAttributes(
+		attribute.String("component", "llm-d-inference-scheduler"),
+		attribute.String("operation", "main_startup"),
+		attribute.String("service.name", "llm-d-inference-scheduler"),
+	)
+
+	// Register GIE plugins
+	span.SetAttributes(attribute.String("operation", "registering_plugins"))
+	runner.RegisterAllPlugins()
+
+	// Register llm-d-inference-scheduler plugins
+	plugins.RegisterAllPlugins()
+
+	span.SetAttributes(attribute.String("operation", "starting_runner"))
+	if err := runner.NewRunner().Run(ctx); err != nil {
+		span.SetAttributes(attribute.String("error", "runner_failed"))
 		os.Exit(1)
 	}
 }
