@@ -128,7 +128,7 @@ func extractPromptFromRequest(request *types.LLMRequest) string {
 	if request.Body.ChatCompletions != nil {
 		var messages []string
 		for _, msg := range request.Body.ChatCompletions.Messages {
-			messages = append(messages, msg.Content)
+			messages = append(messages, msg.Content.PlainText())
 		}
 		return strings.Join(messages, " ")
 	}
