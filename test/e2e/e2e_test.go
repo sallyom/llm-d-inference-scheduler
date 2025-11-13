@@ -22,9 +22,12 @@ const (
 	// simDeployment references the YAML file for the deployment
 	// running the vLLM simulator without PD
 	simDeployment = "./yaml/vllm-sim.yaml"
-	// simPdDeployment references the YAML file for the deployment
+	// simPDDeployment references the YAML file for the deployment
 	// running the vLLM simulator with PD
-	simPdDeployment = "./yaml/vllm-sim-pd.yaml"
+	simPDDeployment = "./yaml/vllm-sim-pd.yaml"
+	// simDPDeployment references  the YAML file for the deployment
+	// running the vLLM simulator with Data Parallel
+	simDPDeployment = "./yaml/vllm-sim-dp.yaml"
 
 	simplePrompt = "Hello my name is Andrew, I have a doctorate in Rocket Science, and I like interplanetary space exploration"
 	extraPrompt  = "Why is the sky sometimes blue and sometimes red close to sunset?"
@@ -40,7 +43,9 @@ var (
 var _ = ginkgo.Describe("Run end to end tests", ginkgo.Ordered, func() {
 	ginkgo.When("Running simple non-PD configuration", func() {
 		ginkgo.It("should run successfully", func() {
-			modelServers := createModelServers(false, false, 1, 0, 0)
+			createInferencePool(1, true)
+
+			modelServers := createModelServers(false, false, false, 1, 0, 0)
 
 			epp := createEndPointPicker(simpleConfig)
 
@@ -48,11 +53,11 @@ var _ = ginkgo.Describe("Run end to end tests", ginkgo.Ordered, func() {
 			gomega.Expect(prefillPods).Should(gomega.BeEmpty())
 			gomega.Expect(decodePods).Should(gomega.HaveLen(1))
 
-			nsHdr, podHdr := runCompletion(simplePrompt, modelName)
+			nsHdr, podHdr, _ := runCompletion(simplePrompt, modelName)
 			gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
 			gomega.Expect(podHdr).Should(gomega.Equal(decodePods[0]))
 
-			nsHdr, podHdr = runChatCompletion(simplePrompt)
+			nsHdr, podHdr, _ = runChatCompletion(simplePrompt)
 			gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
 			gomega.Expect(podHdr).Should(gomega.Equal(decodePods[0]))
 
@@ -63,9 +68,11 @@ var _ = ginkgo.Describe("Run end to end tests", ginkgo.Ordered, func() {
 
 	ginkgo.When("Running a PD configuration", func() {
 		ginkgo.It("should run successfully", func() {
+			createInferencePool(1, true)
+
 			prefillReplicas := 1
 			decodeReplicas := 4
-			modelServers := createModelServers(true, false, 0, prefillReplicas, decodeReplicas)
+			modelServers := createModelServers(true, false, false, 0, prefillReplicas, decodeReplicas)
 
 			epp := createEndPointPicker(pdConfig)
 
@@ -73,32 +80,32 @@ var _ = ginkgo.Describe("Run end to end tests", ginkgo.Ordered, func() {
 			gomega.Expect(prefillPods).Should(gomega.HaveLen(prefillReplicas))
 			gomega.Expect(decodePods).Should(gomega.HaveLen(decodeReplicas))
 
-			nsHdr, podHdrCompletion := runCompletion(simplePrompt, modelName)
+			nsHdr, podHdrCompletion, _ := runCompletion(simplePrompt, modelName)
 			gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
 			gomega.Expect(podHdrCompletion).Should(gomega.BeElementOf(decodePods))
 
-			nsHdr, podHdrChat := runChatCompletion(simplePrompt)
+			nsHdr, podHdrChat, _ := runChatCompletion(simplePrompt)
 			gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
 			gomega.Expect(podHdrChat).Should(gomega.BeElementOf(decodePods))
 
 			// Do an extra completion call with a different prompt
-			nsHdr, podHdr := runCompletion(extraPrompt, modelName)
+			nsHdr, podHdr, _ := runCompletion(extraPrompt, modelName)
 			gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
 			gomega.Expect(podHdr).Should(gomega.BeElementOf(decodePods))
 
 			// Run completion with the original prompt
-			nsHdr, podHdr = runCompletion(simplePrompt, modelName)
+			nsHdr, podHdr, _ = runCompletion(simplePrompt, modelName)
 			gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
 			gomega.Expect(podHdr).Should(gomega.BeElementOf(decodePods))
 			gomega.Expect(podHdr).Should(gomega.Equal(podHdrCompletion))
 
 			// Do an extra chat completion call with a different prompt
-			nsHdr, podHdr = runChatCompletion(extraPrompt)
+			nsHdr, podHdr, _ = runChatCompletion(extraPrompt)
 			gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
 			gomega.Expect(podHdr).Should(gomega.BeElementOf(decodePods))
 
 			// Run chat completion with the original prompt
-			nsHdr, podHdr = runChatCompletion(simplePrompt)
+			nsHdr, podHdr, _ = runChatCompletion(simplePrompt)
 			gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
 			gomega.Expect(podHdr).Should(gomega.BeElementOf(decodePods))
 			gomega.Expect(podHdr).Should(gomega.Equal(podHdrChat))
@@ -110,9 +117,11 @@ var _ = ginkgo.Describe("Run end to end tests", ginkgo.Ordered, func() {
 
 	ginkgo.When("Running simple non-PD KV enabled configuration", func() {
 		ginkgo.It("should run successfully", func() {
+			createInferencePool(1, true)
+
 			epp := createEndPointPicker(kvConfig)
 
-			modelServers := createModelServers(false, true, 1, 0, 0)
+			modelServers := createModelServers(false, true, false, 1, 0, 0)
 			time.Sleep(5 * time.Second) // wait for model server(s) to become ready
 
 			prefillPods, decodePods := getModelServerPods(podSelector, prefillSelector, decodeSelector)
@@ -120,7 +129,7 @@ var _ = ginkgo.Describe("Run end to end tests", ginkgo.Ordered, func() {
 			gomega.Expect(decodePods).Should(gomega.HaveLen(1))
 
 			for range 5 {
-				nsHdr, podHdr := runCompletion(simplePrompt, kvModelName)
+				nsHdr, podHdr, _ := runCompletion(simplePrompt, kvModelName)
 				gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
 				gomega.Expect(podHdr).Should(gomega.Equal(decodePods[0]))
 			}
@@ -132,7 +141,9 @@ var _ = ginkgo.Describe("Run end to end tests", ginkgo.Ordered, func() {
 
 	ginkgo.When("Scaling up and down the model servers", func() {
 		ginkgo.It("should distribute inference requests across all model servers", func() {
-			modelServers := createModelServers(false, false, 1, 0, 0)
+			createInferencePool(1, true)
+
+			modelServers := createModelServers(false, false, false, 1, 0, 0)
 
 			epp := createEndPointPicker(scaleConfig)
 
@@ -142,7 +153,7 @@ var _ = ginkgo.Describe("Run end to end tests", ginkgo.Ordered, func() {
 
 			var nsHdr, podHdr string
 			for range 5 {
-				nsHdr, podHdr = runCompletion(simplePrompt, modelName)
+				nsHdr, podHdr, _ = runCompletion(simplePrompt, modelName)
 				gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
 				gomega.Expect(podHdr).Should(gomega.Equal(decodePods[0]))
 			}
@@ -156,7 +167,7 @@ var _ = ginkgo.Describe("Run end to end tests", ginkgo.Ordered, func() {
 			var scaledNsHdr, scaledPodHdr string
 			// Run inference multiple times until one is scheduled on the new pod
 			for range 30 {
-				scaledNsHdr, scaledPodHdr = runCompletion(extraPrompt, modelName)
+				scaledNsHdr, scaledPodHdr, _ = runCompletion(extraPrompt, modelName)
 				gomega.Expect(scaledNsHdr).Should(gomega.Equal(nsName))
 				gomega.Expect(scaledPodHdr).Should(gomega.BeElementOf(scaledUpDecodePods))
 				if scaledPodHdr != podHdr {
@@ -174,7 +185,7 @@ var _ = ginkgo.Describe("Run end to end tests", ginkgo.Ordered, func() {
 
 			// Run multiple times and insure that they are scheduled on the remaining pod
 			for range 5 {
-				nsHdr, podHdr = runCompletion(simplePrompt, modelName)
+				nsHdr, podHdr, _ = runCompletion(simplePrompt, modelName)
 				gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
 				gomega.Expect(podHdr).Should(gomega.Equal(scaledDownDecodePods[0]))
 			}
@@ -183,10 +194,59 @@ var _ = ginkgo.Describe("Run end to end tests", ginkgo.Ordered, func() {
 			testutils.DeleteObjects(testConfig, modelServers)
 		})
 	})
+
+	ginkgo.When("Running a vLLM Data Parallel configuration", func() {
+		ginkgo.It("should schedule inference on all ranks", func() {
+			createInferencePool(2, true)
+
+			modelServers := createModelServers(false, false, true, 1, 0, 0)
+
+			epp := createEndPointPicker(dataParallelConfig)
+
+			prefillPods, decodePods := getModelServerPods(podSelector, prefillSelector, decodeSelector)
+			gomega.Expect(prefillPods).Should(gomega.BeEmpty())
+			gomega.Expect(decodePods).Should(gomega.HaveLen(1))
+
+			nsHdr, podHdr, portHdr := runCompletion(simplePrompt, modelName)
+			gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
+			gomega.Expect(podHdr).Should(gomega.Equal(decodePods[0]))
+
+			var parallelNsHdr, parallelPodHdr, parallelPortHdr string
+
+			// Run inference multiple times until one is scheduled on the other port
+			for range 30 {
+				parallelNsHdr, parallelPodHdr, parallelPortHdr = runCompletion(extraPrompt, modelName)
+				gomega.Expect(parallelNsHdr).Should(gomega.Equal(nsName))
+				gomega.Expect(parallelPodHdr).Should(gomega.Equal(decodePods[0]))
+				if parallelPortHdr != portHdr {
+					break
+				}
+			}
+			gomega.Expect(parallelPortHdr).ShouldNot(gomega.Equal(portHdr))
+
+			nsHdr, podHdr, portHdr = runChatCompletion(simplePrompt)
+			gomega.Expect(nsHdr).Should(gomega.Equal(nsName))
+			gomega.Expect(podHdr).Should(gomega.Equal(decodePods[0]))
+
+			// Run inference multiple times until one is scheduled on the other port
+			for range 30 {
+				parallelNsHdr, parallelPodHdr, parallelPortHdr = runChatCompletion(extraPrompt)
+				gomega.Expect(parallelNsHdr).Should(gomega.Equal(nsName))
+				gomega.Expect(parallelPodHdr).Should(gomega.Equal(decodePods[0]))
+				if parallelPortHdr != portHdr {
+					break
+				}
+			}
+			gomega.Expect(parallelPortHdr).ShouldNot(gomega.Equal(portHdr))
+
+			testutils.DeleteObjects(testConfig, epp)
+			testutils.DeleteObjects(testConfig, modelServers)
+		})
+	})
 })
 
 // createModelServers creates the model server resources used for testing from the given filePaths.
-func createModelServers(withPD, withKV bool, vllmReplicas, prefillReplicas, decodeReplicas int) []string {
+func createModelServers(withPD, withKV, withDP bool, vllmReplicas, prefillReplicas, decodeReplicas int) []string {
 	theModelName := modelName
 	theSafeModelName := modelName
 	if withKV {
@@ -195,7 +255,9 @@ func createModelServers(withPD, withKV bool, vllmReplicas, prefillReplicas, deco
 	}
 	yaml := simDeployment
 	if withPD {
-		yaml = simPdDeployment
+		yaml = simPDDeployment
+	} else if withDP {
+		yaml = simDPDeployment
 	}
 
 	manifests := testutils.ReadYaml(yaml)
@@ -266,7 +328,7 @@ func createEndPointPicker(eppConfig string) []string {
 	return objects
 }
 
-func runCompletion(prompt string, theModel openai.CompletionNewParamsModel) (string, string) {
+func runCompletion(prompt string, theModel openai.CompletionNewParamsModel) (string, string, string) {
 	var httpResp *http.Response
 	openaiclient := openai.NewClient(
 		option.WithBaseURL(fmt.Sprintf("http://localhost:%s/v1", port)))
@@ -286,11 +348,12 @@ func runCompletion(prompt string, theModel openai.CompletionNewParamsModel) (str
 
 	namespaceHeader := httpResp.Header.Get("x-inference-namespace")
 	podHeader := httpResp.Header.Get("x-inference-pod")
+	podPort := httpResp.Header.Get("x-inference-port")
 
-	return namespaceHeader, podHeader
+	return namespaceHeader, podHeader, podPort
 }
 
-func runChatCompletion(prompt string) (string, string) {
+func runChatCompletion(prompt string) (string, string, string) {
 	var httpResp *http.Response
 	openaiclient := openai.NewClient(
 		option.WithBaseURL(fmt.Sprintf("http://localhost:%s/v1", port)))
@@ -309,8 +372,9 @@ func runChatCompletion(prompt string) (string, string) {
 
 	namespaceHeader := httpResp.Header.Get("x-inference-namespace")
 	podHeader := httpResp.Header.Get("x-inference-pod")
+	podPort := httpResp.Header.Get("x-inference-port")
 
-	return namespaceHeader, podHeader
+	return namespaceHeader, podHeader, podPort
 }
 
 // Simple EPP configuration for running without P/D
@@ -405,5 +469,19 @@ plugins:
 schedulingProfiles:
 - name: default
   plugins:
+  - pluginRef: max-score-picker
+`
+
+// EPP configuration for running with vLLM Data Parallel support
+const dataParallelConfig = `apiVersion: inference.networking.x-k8s.io/v1alpha1
+kind: EndpointPickerConfig
+plugins:
+- type: decode-filter
+- type: max-score-picker
+- type: data-parallel-profile-handler
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: decode-filter
   - pluginRef: max-score-picker
 `
