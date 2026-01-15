@@ -30,10 +30,11 @@ COPY llm-d-inference-scheduler/test/ test/
 COPY llm-d-kv-cache/ /workspace/llm-d-kv-cache/
 COPY gateway-api-inference-extension/ /workspace/gateway-api-inference-extension/
 
-# Temporarily update llm-d-kv-cache module name and imports to match what inference-scheduler expects
-RUN cd /workspace/llm-d-kv-cache && \
-    go mod edit -module github.com/llm-d/llm-d-kv-cache-manager && \
-    find . -type f -name '*.go' -exec sed -i 's|github.com/llm-d/llm-d-kv-cache|github.com/llm-d/llm-d-kv-cache-manager|g' {} +
+# Note: Skipping module renaming since the tracing branch already uses llm-d-kv-cache-manager
+# If using main branch, uncomment these lines:
+# RUN cd /workspace/llm-d-kv-cache && \
+#     go mod edit -module github.com/llm-d/llm-d-kv-cache-manager && \
+#     find . -type f -name '*.go' -exec sed -i 's|github.com/llm-d/llm-d-kv-cache|github.com/llm-d/llm-d-kv-cache-manager|g' {} +
 
 # Set up replace directives to use local checkouts
 RUN go mod edit -replace github.com/llm-d/llm-d-kv-cache-manager=/workspace/llm-d-kv-cache
