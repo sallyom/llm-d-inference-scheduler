@@ -138,3 +138,8 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.1 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+// Local development - use sibling directory checkouts for tracing branches
+// Uncomment below to build with Dockerfile.localdev.epp
+//replace github.com/llm-d/llm-d-kv-cache-manager => ../llm-d-kv-cache
+//replace sigs.k8s.io/gateway-api-inference-extension => ../gateway-api-inference-extension
