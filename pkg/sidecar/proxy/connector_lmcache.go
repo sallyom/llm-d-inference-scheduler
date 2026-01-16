@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	sidecarmetrics "github.com/llm-d/llm-d-inference-scheduler/pkg/metrics/sidecar"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -133,31 +134,29 @@ func (s *Server) runLMCacheProtocol(w http.ResponseWriter, r *http.Request, pref
 	decodeDuration := time.Since(decodeStart)
 	decodeSpan.SetAttributes(attribute.Float64("llm_d.pd_proxy.decode.duration_ms", float64(decodeDuration.Milliseconds())))
 
-	// Calculate end-to-end P/D metrics and add to decode span
-	// These metrics represent the "true" TTFT and latency from the coordinator's perspective
-	// Note: After tracer.Start() above, ctx contains the decode span, so SpanFromContext returns it
-	if currentSpan := trace.SpanFromContext(ctx); currentSpan.SpanContext().IsValid() {
-		// Get request start time from context
-		var totalDuration time.Duration
-		var trueTTFT time.Duration
-		if requestStartValue := ctx.Value(requestStartTimeKey); requestStartValue != nil {
-			if requestStart, ok := requestStartValue.(time.Time); ok {
-				totalDuration = time.Since(requestStart)
+	// Calculate and record P/D coordinator metrics
+	// Coordinator overhead: time between prefill HTTP completion and decode HTTP request start
+	// This captures the sidecar coordination overhead (JSON parsing, etc.) between prefill and decode stages
+	// Note: Actual KV cache transfer happens inside vLLM and is not measured here
+	coordinatorOverhead := decodeStart.Sub(prefillStart.Add(prefillDuration))
 
-				// The "true TTFT" in P/D mode is the time until the decoder can start generating
-				// This includes: gateway routing + scheduling + prefill time + KV transfer coordination overhead
-				// The decode vLLM will report a low TTFT (since KV is already transferred),
-				// but this captures the real end-to-end TTFT from the client's perspective
-				//
-				// True TTFT = time from gateway request start to decode start
-				// This includes all coordinator overhead that vLLM-level metrics miss
-				trueTTFT = decodeStart.Sub(requestStart)
-			}
+	// Get request start time from context for totalDuration calculation
+	var totalDuration time.Duration
+	var trueTTFT time.Duration
+	if requestStartValue := ctx.Value(requestStartTimeKey); requestStartValue != nil {
+		if requestStart, ok := requestStartValue.(time.Time); ok {
+			totalDuration = time.Since(requestStart)
+
+			// The "true TTFT" in P/D mode is the time until the decoder can start generating
+			// This includes: gateway routing + scheduling + prefill time + coordinator overhead
+			// The decode vLLM will report a low TTFT (since KV is already transferred),
+			// but this captures the real end-to-end TTFT from the client's perspective
+			trueTTFT = decodeStart.Sub(requestStart)
 		}
+	}
 
-		// KV transfer overhead: time between prefill completion and decode start
-		kvTransferOverhead := decodeStart.Sub(prefillStart.Add(prefillDuration))
-
+	// Add P/D metrics to decode span for tracing
+	if currentSpan := trace.SpanFromContext(ctx); currentSpan.SpanContext().IsValid() {
 		currentSpan.SetAttributes(
 			// End-to-end P/D timing metrics
 			attribute.Float64("llm_d.pd_proxy.total_duration_ms", float64(totalDuration.Milliseconds())),
@@ -167,8 +166,14 @@ func (s *Server) runLMCacheProtocol(w http.ResponseWriter, r *http.Request, pref
 			attribute.Float64("llm_d.pd_proxy.prefill_duration_ms", float64(prefillDuration.Milliseconds())),
 			attribute.Float64("llm_d.pd_proxy.decode_duration_ms", float64(decodeDuration.Milliseconds())),
 
-			// Coordination overhead
-			attribute.Float64("llm_d.pd_proxy.kv_transfer_overhead_ms", float64(kvTransferOverhead.Milliseconds())),
+			// Coordination overhead between prefill and decode (sidecar JSON processing)
+			attribute.Float64("llm_d.pd_proxy.coordinator_overhead_ms", float64(coordinatorOverhead.Milliseconds())),
 		)
 	}
+
+	// Record Prometheus metrics for dashboard aggregation
+	sidecarmetrics.PDProxyCoordinatorOverheadMilliseconds.WithLabelValues("lmcache").Observe(float64(coordinatorOverhead.Milliseconds()))
+	sidecarmetrics.PDProxyPrefillDurationMilliseconds.WithLabelValues("lmcache").Observe(float64(prefillDuration.Milliseconds()))
+	sidecarmetrics.PDProxyDecodeDurationMilliseconds.WithLabelValues("lmcache").Observe(float64(decodeDuration.Milliseconds()))
+	sidecarmetrics.PDProxyTotalDurationMilliseconds.WithLabelValues("lmcache").Observe(float64(totalDuration.Milliseconds()))
 }

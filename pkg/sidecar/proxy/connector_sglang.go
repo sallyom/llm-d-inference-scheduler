@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	sidecarmetrics "github.com/llm-d/llm-d-inference-scheduler/pkg/metrics/sidecar"
 	"github.com/llm-d/llm-d-inference-scheduler/pkg/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -147,25 +148,25 @@ func (s *Server) sendSGLangConcurrentRequests(w http.ResponseWriter, r *http.Req
 		attribute.String("llm_d.pd_proxy.decode.target", s.decoderURL.Host),
 	)
 
-	// Calculate end-to-end P/D metrics and add to decode span
-	// Note: SGLang runs prefill and decode concurrently, so timing is different from sequential P/D
-	// Note: After tracer.Start() above, ctx contains the decode span, so SpanFromContext returns it
-	if currentSpan := trace.SpanFromContext(ctx); currentSpan.SpanContext().IsValid() {
-		// Get request start time from context
-		var totalDuration time.Duration
-		var trueTTFT time.Duration
-		if requestStartValue := ctx.Value(requestStartTimeKey); requestStartValue != nil {
-			if requestStart, ok := requestStartValue.(time.Time); ok {
-				totalDuration = time.Since(requestStart)
+	// Calculate and record P/D coordinator metrics
+	// Note: SGLang runs prefill and decode concurrently, so we only measure decode and total
+	// Get request start time from context for totalDuration calculation
+	var totalDuration time.Duration
+	var trueTTFT time.Duration
+	if requestStartValue := ctx.Value(requestStartTimeKey); requestStartValue != nil {
+		if requestStart, ok := requestStartValue.(time.Time); ok {
+			totalDuration = time.Since(requestStart)
 
-				// For SGLang, prefill and decode run concurrently, but True TTFT still needs to capture
-				// the full coordinator overhead from gateway start to when decode can begin generating.
-				// This includes: gateway routing + scheduling overhead + time to start decode request
-				// Note: In concurrent mode, this is different from sequential P/D where we wait for prefill
-				trueTTFT = decodeStart.Sub(requestStart)
-			}
+			// For SGLang, prefill and decode run concurrently, but True TTFT still needs to capture
+			// the full coordinator overhead from gateway start to when decode can begin generating.
+			// This includes: gateway routing + scheduling overhead + time to start decode request
+			// Note: In concurrent mode, this is different from sequential P/D where we wait for prefill
+			trueTTFT = decodeStart.Sub(requestStart)
 		}
+	}
 
+	// Add P/D metrics to decode span for tracing
+	if currentSpan := trace.SpanFromContext(ctx); currentSpan.SpanContext().IsValid() {
 		currentSpan.SetAttributes(
 			// End-to-end P/D timing metrics for concurrent P/D
 			attribute.Float64("llm_d.pd_proxy.total_duration_ms", float64(totalDuration.Milliseconds())),
@@ -179,6 +180,10 @@ func (s *Server) sendSGLangConcurrentRequests(w http.ResponseWriter, r *http.Req
 			attribute.Bool("llm_d.pd_proxy.concurrent_pd", true),
 		)
 	}
+
+	// Record Prometheus metrics for dashboard aggregation
+	sidecarmetrics.PDProxyDecodeDurationMilliseconds.WithLabelValues("sglang").Observe(float64(decodeDuration.Milliseconds()))
+	sidecarmetrics.PDProxyTotalDurationMilliseconds.WithLabelValues("sglang").Observe(float64(totalDuration.Milliseconds()))
 }
 
 func cloneWithJSONBody(r *http.Request, body []byte) *http.Request {
