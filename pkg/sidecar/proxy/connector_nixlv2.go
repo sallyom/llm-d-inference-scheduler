@@ -62,9 +62,6 @@ func (s *Server) runNIXLProtocolV2(w http.ResponseWriter, r *http.Request, prefi
 	}
 	uuidStr := uuid.String()
 
-	// Timing: capture request start for end-to-end metrics
-	requestStart := time.Now()
-
 	// Prefill Stage
 	tracer := telemetry.Tracer()
 	ctx := r.Context()
@@ -172,7 +169,6 @@ func (s *Server) runNIXLProtocolV2(w http.ResponseWriter, r *http.Request, prefi
 		attribute.String("llm_d.pd_proxy.request_id", uuidStr),
 		attribute.String("llm_d.pd_proxy.connector", "nixlv2"),
 	)
-	decodeStart := time.Now()
 
 	// 1. Prepare decode request
 	dreq := r.Clone(ctx)

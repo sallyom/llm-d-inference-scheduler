@@ -33,9 +33,6 @@ import (
 func (s *Server) runLMCacheProtocol(w http.ResponseWriter, r *http.Request, prefillPodHostPort string) {
 	s.logger.Info("running LMCache protocol")
 
-	// Timing: capture request start for end-to-end metrics
-	requestStart := time.Now()
-
 	tracer := telemetry.Tracer()
 	ctx := r.Context()
 
@@ -68,9 +65,6 @@ func (s *Server) runLMCacheProtocol(w http.ResponseWriter, r *http.Request, pref
 	prefillStart := time.Now()
 
 	// Create prefiller request. Set max_tokens to 1.
-	// Prefill Stage
-	prefillStart := time.Now()
-
 	preq := r.Clone(ctx)
 
 	completionRequest[requestFieldMaxTokens] = 1
